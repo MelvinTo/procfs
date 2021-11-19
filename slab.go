@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"runtime"
 
 	"github.com/prometheus/procfs/internal/util"
 )
@@ -60,6 +61,63 @@ func shouldParseSlab(line string) bool {
 		return false
 	}
 	return true
+}
+
+// parseV21ArmSlabEntry is used to parse a line from /proc/slabinfo version 2.1. only for arm64
+func parseV21ArmSlabEntry(line string) (*Slab, error) {
+	// First cleanup whitespace.
+	l := slabSpace.ReplaceAllString(line, " ")
+	s := strings.Split(l, " ")
+	if len(s) != 17 {
+		return nil, fmt.Errorf("unable to parse: %q", line)
+	}
+	var err error
+	i := &Slab{Name: s[0]}
+	i.ObjActive, err = strconv.ParseInt(s[1], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.ObjNum, err = strconv.ParseInt(s[2], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.ObjSize, err = strconv.ParseInt(s[3], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.ObjPerSlab, err = strconv.ParseInt(s[4], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.PagesPerSlab, err = strconv.ParseInt(s[5], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.Limit, err = strconv.ParseInt(s[9], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.Batch, err = strconv.ParseInt(s[10], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.SharedFactor, err = strconv.ParseInt(s[11], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.SlabActive, err = strconv.ParseInt(s[14], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.SlabNum, err = strconv.ParseInt(s[15], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	i.SharedAvail, err = strconv.ParseInt(s[16], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return i, nil
 }
 
 // parseV21SlabEntry is used to parse a line from /proc/slabinfo version 2.1.
@@ -128,7 +186,17 @@ func parseSlabInfo21(r *bytes.Reader) (SlabInfo, error) {
 		if !shouldParseSlab(line) {
 			continue
 		}
-		slab, err := parseV21SlabEntry(line)
+
+		var slab *Slab
+		var err error
+
+		switch runtime.GOARCH {
+		case "arm64":
+			slab, err = parseV21ArmSlabEntry(line)
+		default:
+			slab, err = parseV21SlabEntry(line)
+		}
+
 		if err != nil {
 			return s, err
 		}
